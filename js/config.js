@@ -41,18 +41,6 @@ const API_SITES = {
         name: '🎬茅台资源',
         detail: 'https://mtzy.me'
     },
-    'wolongzyw.com': {
-        api: 'https://wolongzyw.com/api.php/provide/vod',
-        name: '🎬卧龙资源',
-        detail: 'https://wolongzyw.com',
-        unavailable: true
-    },
-    'ikunzy.com': {
-        api: 'https://ikunzyapi.com/api.php/provide/vod',
-        name: '🎬iKun资源',
-        detail: 'https://ikunzy.com',
-        unavailable: true
-    },
     'dyttzyapi.com': {
         api: 'http://caiji.dyttzyapi.com/api.php/provide/vod',
         name: '🎬电影天堂',
@@ -62,12 +50,6 @@ const API_SITES = {
         api: 'https://api.maoyanapi.top/api.php/provide/vod',
         name: '🎬猫眼资源',
         detail: 'https://www.maoyanzy.com'
-    },
-    'cj.lzcaiji.com': {
-        api: 'https://cj.lzcaiji.com/api.php/provide/vod',
-        name: '🎬量子资源',
-        detail: 'https://cj.lzcaiji.com',
-        unavailable: true
     },
     '360zy.com': {
         api: 'https://360zyzz.com/api.php/provide/vod',
@@ -99,22 +81,10 @@ const API_SITES = {
         name: '🎬最大资源',
         detail: 'https://zuida.xyz'
     },
-    'wujinzy.me': {
-        api: 'https://api.wujinapi.me/api.php/provide/vod',
-        name: '🎬无尽资源',
-        detail: 'https://wujinzy.com',
-        unavailable: true
-    },
     'xinlangapi.com': {
         api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod',
         name: '🎬新浪资源',
         detail: 'https://xinlangapi.com'
-    },
-    'api.wwzy.tv': {
-        api: 'https://api.wwzy.tv/api.php/provide/vod',
-        name: '🎬旺旺资源',
-        detail: 'https://api.wwzy.tv',
-        unavailable: true
     },
     'www.subozy.com': {
         api: 'https://subocaiji.com/api.php/provide/vod',
@@ -151,30 +121,7 @@ const API_SITES = {
         name: '🎬魔都动漫',
         detail: 'https://caiji.moduapi.cc'
     },
-    'www.ryzyw.com': {
-        api: 'https://pz.168188.dpdns.org/?url=https://cj.rycjapi.com/api.php/provide/vod',
-        name: '🎬如意资源',
-        detail: 'https://www.ryzyw.com',
-        unavailable: true
-    },
-    'www.haohuazy.com': {
-        api: 'https://pz.168188.dpdns.org/?url=https://hhzyapi.com/api.php/provide/vod',
-        name: '🎬豪华资源',
-        detail: 'https://www.haohuazy.com',
-        unavailable: true
-    },
-    'bdzy1.com': {
-        api: 'https://pz.168188.dpdns.org/?url=https://api.apibdzy.com/api.php/provide/vod',
-        name: '🎬百度云zy',
-        detail: 'https://bdzy1.com',
-        unavailable: true
-    },
-    'lovedan.net': {
-        api: 'https://pz.168188.dpdns.org/?url=https://lovedan.net/api.php/provide/vod',
-        name: '🎬艾旦影视',
-        detail: 'https://lovedan.net',
-        unavailable: true
-    }
+
     //ARCHIVE https://telegra.ph/APIs-08-12
 };
 
