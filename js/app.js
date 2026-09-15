@@ -696,7 +696,7 @@ async function search() {
                               d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h3 class="mt-2 text-lg font-medium text-gray-400">没有找到匹配的结果</h3>
-                    <p class="mt-1 text-sm text-gray-500">请尝试其他关键词或更换数据源</p>
+                    <p class="mt-1 text-sm text-gray-500">请尝试其他关键词，或在「设置」中换用支持搜索的源（电影天堂 / 非凡 / 暴风）</p>
                 </div>
             `;
             hideLoading();

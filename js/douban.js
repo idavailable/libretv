@@ -198,10 +198,12 @@ async function fillAndSearchWithDouban(title) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     
-    // 确保豆瓣资源API被选中
-    const DOUBAN_API_KEY = 'dbzy.tv';
+    // 确保搜索用的API被选中
+    // 说明：原实现固定用「豆瓣资源」(dbzy.tv)，但该采集源的服务端已禁用关键词搜索
+    // （接口返回 code 1002），点开必定 0 结果。这里改用真正支持关键词搜索的源。
+    const DOUBAN_API_KEY = 'bfzy.tv';
     if (typeof selectedAPIs !== 'undefined' && !selectedAPIs.includes(DOUBAN_API_KEY)) {
-        // 在设置中勾选豆瓣资源API复选框
+        // 在设置中勾选对应API复选框
         const doubanCheckbox = document.querySelector('input[id="api_' + DOUBAN_API_KEY + '"]');
         if (doubanCheckbox) {
             doubanCheckbox.checked = true;
@@ -221,7 +223,7 @@ async function fillAndSearchWithDouban(title) {
                 }
             }
             
-            showToast('已自动选择豆瓣资源API', 'info');
+            showToast('已自动选择可用搜索源', 'info');
         }
     }
     
