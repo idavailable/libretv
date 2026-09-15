@@ -34,13 +34,15 @@ async function checkForUpdates() {
             cache: 'no-store'
         });
         
-        // 获取最新版本
-        let latestVersion;
+        // 获取最新版本（可选）：远程请求失败时不报错，
+        // 优雅降级为仅显示本地版本——这是自部署分叉，上游更新通知意义不大，
+        // 而国内网络访问 raw.githubusercontent.com / ghfast.top 大概率超时。
+        let latestVersion = null;
         const VERSION_URL = {
-            PROXY: 'https://ghfast.top/raw.githubusercontent.com/LibreSpark/LibreTV/main/VERSION.txt',
-            DIRECT: 'https://raw.githubusercontent.com/LibreSpark/LibreTV/main/VERSION.txt'
+            PROXY: 'https://ghfast.top/raw.githubusercontent.com/idavailable/libretv/main/VERSION.txt',
+            DIRECT: 'https://raw.githubusercontent.com/idavailable/libretv/main/VERSION.txt'
         };
-        const FETCH_TIMEOUT = 1500;
+        const FETCH_TIMEOUT = 2500;
         
         try {
             // 尝试使用代理URL获取最新版本
@@ -58,8 +60,9 @@ async function checkForUpdates() {
                 latestVersion = await fetchVersion(VERSION_URL.DIRECT, '获取最新版本失败');
                 console.log('直接请求获取版本成功');
             } catch (directError) {
-                console.error('所有版本检查请求均失败:', directError);
-                throw new Error('无法获取最新版本信息');
+                // 关键改动：不再 throw，静默降级为仅本地版本
+                console.warn('远程版本获取失败，仅显示本地版本:', directError.message);
+                latestVersion = null;
             }
         }
         
@@ -68,13 +71,14 @@ async function checkForUpdates() {
         
         // 清理版本字符串（移除可能的空格或换行符）
         const cleanCurrentVersion = currentVersion.trim();
-        const cleanLatestVersion = latestVersion.trim();
+        // 远程拿不到时用本地版本兜底，hasUpdate 恒为 false
+        const cleanLatestVersion = (latestVersion || cleanCurrentVersion).trim();
         
         // 返回版本信息
         return {
             current: cleanCurrentVersion,
             latest: cleanLatestVersion,
-            hasUpdate: parseInt(cleanLatestVersion) > parseInt(cleanCurrentVersion),
+            hasUpdate: latestVersion ? parseInt(cleanLatestVersion) > parseInt(cleanCurrentVersion) : false,
             currentFormatted: formatVersion(cleanCurrentVersion),
             latestFormatted: formatVersion(cleanLatestVersion)
         };
@@ -148,7 +152,7 @@ function addVersionInfoToFooter() {
                 const updateBtn = versionElement.querySelector('span');
                 if (updateBtn) {
                     updateBtn.addEventListener('click', () => {
-                        window.open('https://github.com/LibreSpark/LibreTV', '_blank');
+                        window.open('https://github.com/idavailable/libretv', '_blank');
                     });
                 }
             }, 100);
