@@ -251,10 +251,11 @@ export async function onRequest(context) {
         const headers = new Headers({
             'User-Agent': getRandomUserAgent(),
             'Accept': '*/*',
-            // 尝试传递一些原始请求的头信息
+            // 传递一些原始请求的头信息
             'Accept-Language': request.headers.get('Accept-Language') || 'zh-CN,zh;q=0.9,en;q=0.8',
-            // 尝试设置 Referer 为目标网站的域名，或者传递原始 Referer
-            'Referer': request.headers.get('Referer') || new URL(targetUrl).origin
+            // 注意：必须使用目标站点自身的 Referer 来绕过防盗链，
+            // 用前端页面的 Referer 会被豆瓣等站点拒绝（403/418）。
+            'Referer': getRefererFor(targetUrl)
         });
 
         try {
@@ -269,16 +270,46 @@ export async function onRequest(context) {
                  throw new Error(`HTTP error ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 150)}`);
             }
 
+            const contentType = response.headers.get('Content-Type') || '';
+
+            // 二进制内容（图片/视频/音频）用 ArrayBuffer 读取，避免文本解码破坏字节
+            if (isBinaryContent(targetUrl, contentType)) {
+                const buffer = await response.arrayBuffer();
+                logDebug(`请求成功(二进制): ${targetUrl}, Content-Type: ${contentType}, 字节数: ${buffer.byteLength}`);
+                return { buffer, contentType, responseHeaders: response.headers, isBinary: true };
+            }
+
             // 读取响应内容为文本
             const content = await response.text();
-            const contentType = response.headers.get('Content-Type') || '';
             logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
-            return { content, contentType, responseHeaders: response.headers }; // 同时返回原始响应头
+            return { content, contentType, responseHeaders: response.headers, isBinary: false }; // 同时返回原始响应头
 
         } catch (error) {
              logDebug(`请求彻底失败: ${targetUrl}: ${error.message}`);
             // 抛出更详细的错误
             throw new Error(`请求目标URL失败 ${targetUrl}: ${error.message}`);
+        }
+    }
+
+    // 判断响应是否为二进制内容（图片/视频/音频）
+    function isBinaryContent(targetUrl, contentType) {
+        const ct = (contentType || '').toLowerCase();
+        if (ct.startsWith('image/') || ct.startsWith('video/') || ct.startsWith('audio/')) return true;
+        if (ct.startsWith('text/') || ct.includes('json') || ct.includes('mpegurl') || ct.includes('xml') || ct.includes('javascript')) return false;
+        const path = targetUrl.split('?')[0].toLowerCase();
+        return /\.(jpe?g|png|gif|webp|bmp|tiff?|svg|avif|ico|heic|mp4|webm|mkv|avi|mov|m4v|flv|ts|m4s|mp3|m4a|aac|flac|ogg|wav|woff2?|ttf|otf|eot)$/.test(path);
+    }
+
+    // 根据目标 URL 生成防盗链所需的 Referer
+    function getRefererFor(targetUrl) {
+        try {
+            const parsed = new URL(targetUrl);
+            if (/(^|\.)doubanio\.com$|(^|\.)douban\.com$/.test(parsed.hostname)) {
+                return 'https://movie.douban.com/';
+            }
+            return `${parsed.origin}/`;
+        } catch {
+            return undefined;
         }
     }
 
@@ -539,14 +570,16 @@ export async function onRequest(context) {
         }
 
         // --- 实际请求 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl);
+        const fetchResult = await fetchContentWithType(targetUrl);
+        const { contentType, responseHeaders } = fetchResult;
 
         // --- 写入缓存 (KV) ---
-        if (kvNamespace) {
+        // 仅缓存文本内容；图片等二进制体积大且 KV 有写入限制，不做缓存
+        if (kvNamespace && !fetchResult.isBinary) {
              try {
                  const headersToCache = {};
                  responseHeaders.forEach((value, key) => { headersToCache[key.toLowerCase()] = value; });
-                 const cacheValue = { body: content, headers: JSON.stringify(headersToCache) };
+                 const cacheValue = { body: fetchResult.content, headers: JSON.stringify(headersToCache) };
                  // 注意 KV 写入限制
                  waitUntil(kvNamespace.put(cacheKey, JSON.stringify(cacheValue), { expirationTtl: CACHE_TTL }));
                  logDebug(`已将原始内容写入缓存: ${targetUrl}`);
@@ -557,19 +590,31 @@ export async function onRequest(context) {
         }
 
         // --- 处理响应 ---
-        if (isM3u8Content(content, contentType)) {
+        if (!fetchResult.isBinary && isM3u8Content(fetchResult.content, contentType)) {
             logDebug(`内容是 M3U8，开始处理: ${targetUrl}`);
-            const processedM3u8 = await processM3u8Content(targetUrl, content, 0, env);
+            const processedM3u8 = await processM3u8Content(targetUrl, fetchResult.content, 0, env);
             return createM3u8Response(processedM3u8);
         } else {
-            logDebug(`内容不是 M3U8 (类型: ${contentType})，直接返回: ${targetUrl}`);
+            logDebug(`直接返回内容 (类型: ${contentType}, 二进制: ${fetchResult.isBinary}): ${targetUrl}`);
             const finalHeaders = new Headers(responseHeaders);
             finalHeaders.set('Cache-Control', `public, max-age=${CACHE_TTL}`);
             // 添加 CORS 头，确保非 M3U8 内容也能跨域访问（例如图片、字幕文件等）
             finalHeaders.set("Access-Control-Allow-Origin", "*");
             finalHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
             finalHeaders.set("Access-Control-Allow-Headers", "*");
-            return createResponse(content, 200, finalHeaders);
+            // 移除会导致内容长度不匹配 / 重复解码的头
+            finalHeaders.delete('content-encoding');
+            finalHeaders.delete('content-length');
+            finalHeaders.delete('content-security-policy');
+            finalHeaders.delete('x-frame-options');
+
+            if (fetchResult.isBinary) {
+                // 二进制直接以 ArrayBuffer 作为响应体，Workers 会自动设置正确的 content-length
+                finalHeaders.set('Content-Type', contentType || 'application/octet-stream');
+                return new Response(fetchResult.buffer, { status: 200, headers: finalHeaders });
+            }
+
+            return createResponse(fetchResult.content, 200, finalHeaders);
         }
 
     } catch (error) {

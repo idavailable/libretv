@@ -143,7 +143,9 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
         'Accept': requestHeaders['accept'] || '*/*', // 传递原始 Accept 头（如果有）
         'Accept-Language': requestHeaders['accept-language'] || 'zh-CN,zh;q=0.9,en;q=0.8',
         // 尝试设置一个合理的 Referer
-        'Referer': requestHeaders['referer'] || new URL(targetUrl).origin,
+        // 注意：豆瓣等站点有防盗链，Referer 必须是目标站点自己的域名才能取到图，
+        // 因此这里不能用前端页面传来的 Referer。
+        'Referer': getRefererFor(targetUrl),
     };
     // 清理空值的头
     Object.keys(headers).forEach(key => headers[key] === undefined || headers[key] === null || headers[key] === '' ? delete headers[key] : {});
@@ -164,18 +166,56 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             throw err; // 抛出错误
         }
 
-        // 读取响应内容
-        const content = await response.text();
         const contentType = response.headers.get('content-type') || '';
+
+        // 二进制内容（图片/视频/音频片段等）必须按 ArrayBuffer 读取，
+        // 否则按文本解码会破坏字节，导致图片只显示一半或直接损坏。
+        if (isBinaryContent(targetUrl, contentType)) {
+            const buffer = await response.arrayBuffer();
+            logDebug(`请求成功(二进制): ${targetUrl}, Content-Type: ${contentType}, 字节数: ${buffer.byteLength}`);
+            return { buffer, contentType, responseHeaders: response.headers, isBinary: true };
+        }
+
+        // 文本内容（JSON / M3U8 / 字幕等）
+        const content = await response.text();
         logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
         // 返回结果
-        return { content, contentType, responseHeaders: response.headers };
+        return { content, contentType, responseHeaders: response.headers, isBinary: false };
 
     } catch (error) {
         // 捕获 fetch 本身的错误（网络、超时等）或上面抛出的 HTTP 错误
         logDebug(`请求异常 ${targetUrl}: ${error.message}`);
         // 重新抛出，确保包含原始错误信息
         throw new Error(`请求目标 URL 失败 ${targetUrl}: ${error.message}`);
+    }
+}
+
+/**
+ * 判断响应是否为二进制内容。
+ * 依据 Content-Type 优先，其次看 URL 扩展名。
+ */
+function isBinaryContent(targetUrl, contentType) {
+    const ct = (contentType || '').toLowerCase();
+    if (ct.startsWith('image/') || ct.startsWith('video/') || ct.startsWith('audio/')) return true;
+    if (ct.startsWith('text/') || ct.includes('json') || ct.includes('mpegurl') || ct.includes('xml') || ct.includes('javascript')) return false;
+    // Content-Type 缺失或为通用类型时，退回按扩展名判断
+    const path = targetUrl.split('?')[0].toLowerCase();
+    return /\.(jpe?g|png|gif|webp|bmp|tiff?|svg|avif|ico|heic|mp4|webm|mkv|avi|mov|m4v|flv|ts|m4s|mp3|m4a|aac|flac|ogg|wav|woff2?|ttf|otf|eot)$/.test(path);
+}
+
+/**
+ * 根据目标 URL 生成防盗链所需的 Referer。
+ * 很多站点（豆瓣、部分图床）会校验 Referer 是否属于自家域名。
+ */
+function getRefererFor(targetUrl) {
+    try {
+        const { origin, hostname } = new URL(targetUrl);
+        if (/(^|\.)doubanio\.com$|(^|\.)douban\.com$/.test(hostname)) {
+            return 'https://movie.douban.com/';
+        }
+        return `${origin}/`;
+    } catch {
+        return undefined;
     }
 }
 
@@ -413,12 +453,13 @@ export default async function handler(req, res) {
         console.info(`开始处理目标 URL 的代理请求: ${targetUrl}`);
 
         // --- 获取并处理目标内容 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl, req.headers);
+        const fetchResult = await fetchContentWithType(targetUrl, req.headers);
+        const { contentType, responseHeaders } = fetchResult;
 
         // --- 如果是 M3U8，处理并返回 ---
-        if (isM3u8Content(content, contentType)) {
+        if (!fetchResult.isBinary && isM3u8Content(fetchResult.content, contentType)) {
             console.info(`正在处理 M3U8 内容: ${targetUrl}`);
-            const processedM3u8 = await processM3u8Content(targetUrl, content);
+            const processedM3u8 = await processM3u8Content(targetUrl, fetchResult.content);
 
             console.info(`成功处理 M3U8: ${targetUrl}`);
             // 发送处理后的 M3U8 响应
@@ -431,23 +472,31 @@ export default async function handler(req, res) {
                 .send(processedM3u8); // 发送 M3U8 文本
 
         } else {
-            // --- 如果不是 M3U8，直接返回原始内容 ---
-            console.info(`直接返回非 M3U8 内容: ${targetUrl}, 类型: ${contentType}`);
+            // --- 非 M3U8（图片 / 视频 / 音频 / JSON 等）直接透传 ---
+            console.info(`直接返回内容: ${targetUrl}, 类型: ${contentType}, 二进制: ${fetchResult.isBinary}`);
 
             // 设置原始响应头，但排除有问题的头和 CORS 头（已设置）
             responseHeaders.forEach((value, key) => {
                  const lowerKey = key.toLowerCase();
                  if (!lowerKey.startsWith('access-control-') &&
                      lowerKey !== 'content-encoding' && // 很重要！
-                     lowerKey !== 'content-length') {   // 很重要！
+                     lowerKey !== 'content-length') {   // 很重要！长度会变，交给运行时计算
                      res.setHeader(key, value); // 设置其他原始头
                  }
              });
             // 设置我们自己的缓存策略
             res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
 
-            // 发送原始（已解压）内容
-            res.status(200).send(content);
+            if (fetchResult.isBinary) {
+                // 关键：二进制必须用 Buffer 发送，且必须重设 content-length。
+                // 之前把图片当 text 返回，字节被破坏，再叠加超长的 content-length，
+                // 结果就是封面图全部加载失败。
+                const buf = Buffer.from(fetchResult.buffer);
+                res.setHeader('Content-Length', buf.length);
+                res.status(200).send(buf);
+            } else {
+                res.status(200).send(fetchResult.content);
+            }
         }
 
     // ---- 结束主处理逻辑的 try 块 ----

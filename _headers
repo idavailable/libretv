@@ -1,0 +1,18 @@
+# 静态资源缓存策略（Cloudflare Pages）
+# HTML 走协商缓存，保证部署后立刻生效；JS/CSS 也走协商缓存，
+# 避免「服务端已更新、浏览器仍执行旧脚本」导致的功能异常。
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/js/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/css/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# 图片、字体等纯静态资源可以长期缓存
+/image/*
+  Cache-Control: public, max-age=604800
+
+/libs/*
+  Cache-Control: public, max-age=604800

@@ -21,11 +21,147 @@ const SITE_CONFIG = {
 };
 
 // API站点配置
+// 格式说明：键名 = 站点标识（source_code），api = 接口地址（结尾不加斜杠），name = 显示名称，detail = 详情页站点（可选）
 const API_SITES = {
-    testSource: {
-        api: 'https://www.example.com/api.php/provide/vod',
-        name: '空内容测试源',
-        adult: true
+    'iqiyizyapi.com': {
+        api: 'https://iqiyizyapi.com/api.php/provide/vod',
+        name: '🎬-爱奇艺-',
+        detail: 'https://iqiyizyapi.com'
+    },
+    'dbzy.tv': {
+        api: 'https://caiji.dbzy5.com/api.php/provide/vod',
+        name: '🎬豆瓣资源',
+        detail: 'https://dbzy.tv'
+    },
+    'mtzy.me': {
+        api: 'https://caiji.maotaizy.cc/api.php/provide/vod',
+        name: '🎬茅台资源',
+        detail: 'https://mtzy.me'
+    },
+    'wolongzyw.com': {
+        api: 'https://wolongzyw.com/api.php/provide/vod',
+        name: '🎬卧龙资源',
+        detail: 'https://wolongzyw.com'
+    },
+    'ikunzy.com': {
+        api: 'https://ikunzyapi.com/api.php/provide/vod',
+        name: '🎬iKun资源',
+        detail: 'https://ikunzy.com'
+    },
+    'dyttzyapi.com': {
+        api: 'http://caiji.dyttzyapi.com/api.php/provide/vod',
+        name: '🎬电影天堂',
+        detail: 'http://caiji.dyttzyapi.com'
+    },
+    'www.maoyanzy.com': {
+        api: 'https://api.maoyanapi.top/api.php/provide/vod',
+        name: '🎬猫眼资源',
+        detail: 'https://www.maoyanzy.com'
+    },
+    'cj.lzcaiji.com': {
+        api: 'https://cj.lzcaiji.com/api.php/provide/vod',
+        name: '🎬量子资源',
+        detail: 'https://cj.lzcaiji.com'
+    },
+    '360zy.com': {
+        api: 'https://360zyzz.com/api.php/provide/vod',
+        name: '🎬360 资源',
+        detail: 'https://360zy.com'
+    },
+    'jszyapi.com': {
+        api: 'https://jszyapi.com/api.php/provide/vod',
+        name: '🎬极速资源',
+        detail: 'https://jszyapi.com'
+    },
+    'www.moduzy.net': {
+        api: 'https://www.mdzyapi.com/api.php/provide/vod',
+        name: '🎬魔都资源',
+        detail: 'https://www.moduzy.net'
+    },
+    'ffzy': {
+        api: 'https://api.ffzyapi.com/api.php/provide/vod',
+        name: '🎬非凡资源',
+        detail: 'https://cj.ffzyapi.com'
+    },
+    'bfzy.tv': {
+        api: 'https://bfzyapi.com/api.php/provide/vod',
+        name: '🎬暴风资源',
+        detail: 'https://bfzy.tv'
+    },
+    'zuida.xyz': {
+        api: 'https://api.zuidapi.com/api.php/provide/vod',
+        name: '🎬最大资源',
+        detail: 'https://zuida.xyz'
+    },
+    'wujinzy.me': {
+        api: 'https://api.wujinapi.me/api.php/provide/vod',
+        name: '🎬无尽资源',
+        detail: 'https://wujinzy.com'
+    },
+    'xinlangapi.com': {
+        api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod',
+        name: '🎬新浪资源',
+        detail: 'https://xinlangapi.com'
+    },
+    'api.wwzy.tv': {
+        api: 'https://api.wwzy.tv/api.php/provide/vod',
+        name: '🎬旺旺资源',
+        detail: 'https://api.wwzy.tv'
+    },
+    'www.subozy.com': {
+        api: 'https://subocaiji.com/api.php/provide/vod',
+        name: '🎬速播资源',
+        detail: 'https://www.subozy.com'
+    },
+    'jinyingzy.com': {
+        api: 'https://jinyingzy.com/api.php/provide/vod',
+        name: '🎬金鹰点播',
+        detail: 'https://jinyingzy.com'
+    },
+    'p2100.net': {
+        api: 'https://p2100.net/api.php/provide/vod',
+        name: '🎬飘零资源',
+        detail: 'https://p2100.net'
+    },
+    'api.ukuapi88.com': {
+        api: 'https://api.ukuapi88.com/api.php/provide/vod',
+        name: '🎬U酷影视',
+        detail: 'https://www.ukuzy.com'
+    },
+    'api.guangsuapi.com': {
+        api: 'https://api.guangsuapi.com/api.php/provide/vod',
+        name: '🎬光速资源',
+        detail: 'https://api.guangsuapi.com'
+    },
+    'www.hongniuzy.com': {
+        api: 'https://www.hongniuzy2.com/api.php/provide/vod',
+        name: '🎬红牛资源',
+        detail: 'https://www.hongniuzy.com'
+    },
+    'caiji.moduapi.cc': {
+        api: 'https://caiji.moduapi.cc/api.php/provide/vod',
+        name: '🎬魔都动漫',
+        detail: 'https://caiji.moduapi.cc'
+    },
+    'www.ryzyw.com': {
+        api: 'https://pz.168188.dpdns.org/?url=https://cj.rycjapi.com/api.php/provide/vod',
+        name: '🎬如意资源',
+        detail: 'https://www.ryzyw.com'
+    },
+    'www.haohuazy.com': {
+        api: 'https://pz.168188.dpdns.org/?url=https://hhzyapi.com/api.php/provide/vod',
+        name: '🎬豪华资源',
+        detail: 'https://www.haohuazy.com'
+    },
+    'bdzy1.com': {
+        api: 'https://pz.168188.dpdns.org/?url=https://api.apibdzy.com/api.php/provide/vod',
+        name: '🎬百度云zy',
+        detail: 'https://bdzy1.com'
+    },
+    'lovedan.net': {
+        api: 'https://pz.168188.dpdns.org/?url=https://lovedan.net/api.php/provide/vod',
+        name: '🎬艾旦影视',
+        detail: 'https://lovedan.net'
     }
     //ARCHIVE https://telegra.ph/APIs-08-12
 };

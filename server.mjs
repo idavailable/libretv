@@ -152,7 +152,22 @@ function validateProxyAuth(req) {
   return true;
 }
 
-app.get('/proxy/:encodedUrl', async (req, res) => {
+// 根据目标 URL 生成防盗链所需的 Referer
+function buildReferer(targetUrl) {
+  try {
+    const { origin, hostname } = new URL(targetUrl);
+    if (/(^|\.)doubanio\.com$|(^|\.)douban\.com$/.test(hostname)) {
+      return 'https://movie.douban.com/';
+    }
+    return `${origin}/`;
+  } catch {
+    return undefined;
+  }
+}
+
+// 注意：必须用通配符捕获，因为前端编码后的目标 URL 里含 %2F（斜杠）。
+// 若用 '/proxy/:encodedUrl' 单段路由，Express 解码出斜杠后会导致路由不匹配 → 400。
+const handleProxy = async (req, res) => {
   try {
     // 验证鉴权
     if (!validateProxyAuth(req)) {
@@ -162,31 +177,61 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
       });
     }
 
-    const encodedUrl = req.params.encodedUrl;
-    const targetUrl = decodeURIComponent(encodedUrl);
+    // 从原始请求 URL 中截取 /proxy/ 之后的部分（不能依赖 req.path，
+    // 因为挂载在 '/proxy' 上时 req.path 已不含该前缀）。
+    // 注意：不能用 URL 解析，否则 %2F 会被提前解码；
+    // 这里取 rawUrl 中 '?' 之前的部分手工裁剪。
+    const rawUrl = req.originalUrl || req.url || '';
+    const queryIndex = rawUrl.indexOf('?');
+    const rawPath = queryIndex === -1 ? rawUrl : rawUrl.slice(0, queryIndex);
+    let encodedUrl = rawPath.replace(/^\/proxy\/?/, '');
+
+    let targetUrl;
+    try {
+      targetUrl = decodeURIComponent(encodedUrl);
+    } catch {
+      return res.status(400).send('无效的 URL 编码');
+    }
+
+    // 某些运行时会把 %2F 直接解成 /，此时 encodedUrl 已是明文 URL
+    if (!isValidUrl(targetUrl) && /^https?:\/\//i.test(encodedUrl)) {
+      targetUrl = encodedUrl;
+    }
 
     // 安全验证
     if (!isValidUrl(targetUrl)) {
+      console.warn(`代理拒绝无效 URL: ${targetUrl}`);
       return res.status(400).send('无效的 URL');
     }
 
     log(`代理请求: ${targetUrl}`);
 
-    // 添加请求超时和重试逻辑
+    // 使用原生 fetch（undici）而不是 axios：
+    //  1) axios 会读取 HTTPS_PROXY/HTTP_PROXY 环境变量，在存在本地代理时会把
+    //     请求发成明文 HTTP 到 443 端口，导致上游返回
+    //     "The plain http request was sent to https port" (400)，图片全部取不到；
+    //  2) fetch 返回 ArrayBuffer，天然二进制安全，不会破坏图片字节。
     const maxRetries = config.maxRetries;
     let retries = 0;
-    
+
     const makeRequest = async () => {
       try {
-        return await axios({
-          method: 'get',
-          url: targetUrl,
-          responseType: 'stream',
-          timeout: config.timeout,
-          headers: {
-            'User-Agent': config.userAgent
-          }
-        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), config.timeout);
+        try {
+          return await fetch(targetUrl, {
+            redirect: 'follow',
+            signal: controller.signal,
+            headers: {
+              'User-Agent': config.userAgent,
+              'Accept': '*/*',
+              // 防盗链：必须带目标站点自己的 Referer（豆瓣等站点会校验）
+              'Referer': buildReferer(targetUrl)
+            }
+          });
+        } finally {
+          clearTimeout(timer);
+        }
       } catch (error) {
         if (retries < maxRetries) {
           retries++;
@@ -199,31 +244,67 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
 
     const response = await makeRequest();
 
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      console.error(`代理上游返回 ${response.status}: ${errBody.slice(0, 300)}`);
+      return res.status(response.status).send(errBody || `上游返回 ${response.status}`);
+    }
+
     // 转发响应头（过滤敏感头）
-    const headers = { ...response.headers };
+    const headers = {};
+    response.headers.forEach((value, key) => { headers[key] = value; });
     const sensitiveHeaders = (
-      process.env.FILTERED_HEADERS || 
+      process.env.FILTERED_HEADERS ||
       'content-security-policy,cookie,set-cookie,x-frame-options,access-control-allow-origin'
     ).split(',');
-    
+
     sensitiveHeaders.forEach(header => delete headers[header]);
+
+    // 关键：fetch 已经把响应体解压并完整读入内存，
+    // 上游的 content-length / content-encoding / transfer-encoding 都不再适用。
+    // 若继续转发 transfer-encoding: chunked 同时又带上 content-length，
+    // 会产生非法 HTTP 响应，浏览器/客户端直接解析失败。
+    // 这里全部删掉，让 Node 按实际字节自行决定帧格式。
+    delete headers['content-length'];
+    delete headers['content-encoding'];
+    delete headers['transfer-encoding'];
+    delete headers['Content-Length'];
+    delete headers['Content-Encoding'];
+    delete headers['Transfer-Encoding'];
     res.set(headers);
 
-    // 管道传输响应流
-    response.data.pipe(res);
+    // 允许跨域取图（前端 <img> / fetch 均可用）
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // 以 Buffer 输出，保证二进制完整性；长度由 res.send 自动设置
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.status(200).send(buffer);
   } catch (error) {
     console.error('代理请求错误:', error.message);
-    if (error.response) {
-      res.status(error.response.status || 500);
-      error.response.data.pipe(res);
-    } else {
+    if (!res.headersSent) {
       res.status(500).send(`请求失败: ${error.message}`);
     }
   }
+};
+
+// 兼容两种路径：/proxy/<编码URL>，以及编码中的 %2F 被展开成多段的情况。
+// Express 5 使用新版 path-to-regexp，需用 /*splat 具名通配而非裸 *。
+// 另外用 regexp 中间件兜底，避免路径解析细节影响代理可用性。
+app.use('/proxy', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  return handleProxy(req, res);
 });
 
+// 本地开发服务器：js/html 用协商缓存（etag 304），避免改代码后浏览器仍跑旧文件；
+// 部署平台的缓存策略由 Vercel/CF/Netlify 各自控制，与此无关。
 app.use(express.static(path.join(__dirname), {
-  maxAge: config.cacheMaxAge
+  maxAge: 0,
+  etag: true,
+  setHeaders: (res, filePath) => {
+    if (/\.(js|html)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
 }));
 
 app.use((err, req, res, next) => {

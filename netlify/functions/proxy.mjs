@@ -123,12 +123,41 @@ function validateAuth(event) {
     return true;
 }
 
+/**
+ * 判断响应是否为二进制内容（图片/视频/音频）。
+ * 依据 Content-Type 优先，其次看 URL 扩展名。
+ */
+function isBinaryContent(targetUrl, contentType) {
+    const ct = (contentType || '').toLowerCase();
+    if (ct.startsWith('image/') || ct.startsWith('video/') || ct.startsWith('audio/')) return true;
+    if (ct.startsWith('text/') || ct.includes('json') || ct.includes('mpegurl') || ct.includes('xml') || ct.includes('javascript')) return false;
+    const path = targetUrl.split('?')[0].toLowerCase();
+    return /\.(jpe?g|png|gif|webp|bmp|tiff?|svg|avif|ico|heic|mp4|webm|mkv|avi|mov|m4v|flv|ts|m4s|mp3|m4a|aac|flac|ogg|wav|woff2?|ttf|otf|eot)$/.test(path);
+}
+
+/**
+ * 根据目标 URL 生成防盗链所需的 Referer。
+ * 豆瓣等站点会校验 Referer 是否属于自家域名，用前端页面的 Referer 取不到图。
+ */
+function getRefererFor(targetUrl) {
+    try {
+        const { origin, hostname } = new URL(targetUrl);
+        if (/(^|\.)doubanio\.com$|(^|\.)douban\.com$/.test(hostname)) {
+            return 'https://movie.douban.com/';
+        }
+        return `${origin}/`;
+    } catch {
+        return undefined;
+    }
+}
+
 async function fetchContentWithType(targetUrl, requestHeaders) {
     const headers = {
         'User-Agent': getRandomUserAgent(),
         'Accept': requestHeaders['accept'] || '*/*',
         'Accept-Language': requestHeaders['accept-language'] || 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': requestHeaders['referer'] || new URL(targetUrl).origin,
+        // 使用目标站点自身的 Referer，而不是前端页面的 Referer（防盗链要求）
+        'Referer': getRefererFor(targetUrl),
     };
     Object.keys(headers).forEach(key => headers[key] === undefined || headers[key] === null || headers[key] === '' ? delete headers[key] : {});
     logDebug(`Fetching target: ${targetUrl} with headers: ${JSON.stringify(headers)}`);
@@ -140,10 +169,18 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             const err = new Error(`HTTP error ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 200)}`);
             err.status = response.status; throw err;
         }
-        const content = await response.text();
         const contentType = response.headers.get('content-type') || '';
+
+        // 二进制内容按 Buffer 读取，避免文本解码破坏字节
+        if (isBinaryContent(targetUrl, contentType)) {
+            const buffer = Buffer.from(await response.arrayBuffer());
+            logDebug(`Fetch success (binary): ${targetUrl}, Content-Type: ${contentType}, Bytes: ${buffer.length}`);
+            return { buffer, contentType, responseHeaders: response.headers, isBinary: true };
+        }
+
+        const content = await response.text();
         logDebug(`Fetch success: ${targetUrl}, Content-Type: ${contentType}, Length: ${content.length}`);
-        return { content, contentType, responseHeaders: response.headers };
+        return { content, contentType, responseHeaders: response.headers, isBinary: false };
     } catch (error) {
         logDebug(`Fetch exception for ${targetUrl}: ${error.message}`);
         throw new Error(`Failed to fetch target URL ${targetUrl}: ${error.message}`);
@@ -271,12 +308,13 @@ export const handler = async (event, context) => {
         }
 
         // Fetch Original Content (Pass Netlify event headers)
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl, event.headers);
+        const fetchResult = await fetchContentWithType(targetUrl, event.headers);
+        const { contentType, responseHeaders } = fetchResult;
 
         // --- Process if M3U8 ---
-        if (isM3u8Content(content, contentType)) {
+        if (!fetchResult.isBinary && isM3u8Content(fetchResult.content, contentType)) {
             logDebug(`Processing M3U8 content: ${targetUrl}`);
-            const processedM3u8 = await processM3u8Content(targetUrl, content);
+            const processedM3u8 = await processM3u8Content(targetUrl, fetchResult.content);
 
             logDebug(`Successfully processed M3U8 for ${targetUrl}`);
             return {
@@ -291,8 +329,8 @@ export const handler = async (event, context) => {
                 body: processedM3u8, // Netlify expects body as string
             };
         } else {
-            // --- Return Original Content (Non-M3U8) ---
-            logDebug(`Returning non-M3U8 content directly: ${targetUrl}, Type: ${contentType}`);
+            // --- 非 M3U8：直接透传原始内容 ---
+            logDebug(`Returning content directly: ${targetUrl}, Type: ${contentType}, Binary: ${fetchResult.isBinary}`);
 
             // Prepare headers for Netlify response object
             const netlifyHeaders = { ...corsHeaders };
@@ -307,11 +345,22 @@ export const handler = async (event, context) => {
              });
             netlifyHeaders['Cache-Control'] = `public, max-age=${CACHE_TTL}`; // Set our cache policy
 
+            if (fetchResult.isBinary) {
+                // 关键：Netlify Functions 返回二进制必须用 base64 编码并置 isBase64Encoded=true。
+                // 之前直接以字符串返回图片字节，封面图必然损坏。
+                netlifyHeaders['Content-Type'] = contentType || 'application/octet-stream';
+                return {
+                    statusCode: 200,
+                    headers: netlifyHeaders,
+                    body: fetchResult.buffer.toString('base64'),
+                    isBase64Encoded: true,
+                };
+            }
+
             return {
                 statusCode: 200,
                 headers: netlifyHeaders,
-                body: content, // Body as string
-                // isBase64Encoded: false, // Set true only if returning binary data as base64
+                body: fetchResult.content, // Body as string
             };
         }
 
