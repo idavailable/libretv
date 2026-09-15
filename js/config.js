@@ -22,6 +22,9 @@ const SITE_CONFIG = {
 
 // API站点配置
 // 格式说明：键名 = 站点标识（source_code），api = 接口地址（结尾不加斜杠），name = 显示名称，detail = 详情页站点（可选）
+// unavailable: true 标记当前已失效的源（DNS 已死 / Cloudflare 拦截 / 连接重置），
+//              在设置面板里会显示为灰色并加「已失效」角标，便于用户避开。
+//              这些源保留在配置里是因为上游随时可能恢复，届时删掉该标记即可。
 const API_SITES = {
     'iqiyizyapi.com': {
         api: 'https://iqiyizyapi.com/api.php/provide/vod',
@@ -41,12 +44,14 @@ const API_SITES = {
     'wolongzyw.com': {
         api: 'https://wolongzyw.com/api.php/provide/vod',
         name: '🎬卧龙资源',
-        detail: 'https://wolongzyw.com'
+        detail: 'https://wolongzyw.com',
+        unavailable: true
     },
     'ikunzy.com': {
         api: 'https://ikunzyapi.com/api.php/provide/vod',
         name: '🎬iKun资源',
-        detail: 'https://ikunzy.com'
+        detail: 'https://ikunzy.com',
+        unavailable: true
     },
     'dyttzyapi.com': {
         api: 'http://caiji.dyttzyapi.com/api.php/provide/vod',
@@ -61,7 +66,8 @@ const API_SITES = {
     'cj.lzcaiji.com': {
         api: 'https://cj.lzcaiji.com/api.php/provide/vod',
         name: '🎬量子资源',
-        detail: 'https://cj.lzcaiji.com'
+        detail: 'https://cj.lzcaiji.com',
+        unavailable: true
     },
     '360zy.com': {
         api: 'https://360zyzz.com/api.php/provide/vod',
@@ -96,7 +102,8 @@ const API_SITES = {
     'wujinzy.me': {
         api: 'https://api.wujinapi.me/api.php/provide/vod',
         name: '🎬无尽资源',
-        detail: 'https://wujinzy.com'
+        detail: 'https://wujinzy.com',
+        unavailable: true
     },
     'xinlangapi.com': {
         api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod',
@@ -106,7 +113,8 @@ const API_SITES = {
     'api.wwzy.tv': {
         api: 'https://api.wwzy.tv/api.php/provide/vod',
         name: '🎬旺旺资源',
-        detail: 'https://api.wwzy.tv'
+        detail: 'https://api.wwzy.tv',
+        unavailable: true
     },
     'www.subozy.com': {
         api: 'https://subocaiji.com/api.php/provide/vod',
@@ -146,22 +154,26 @@ const API_SITES = {
     'www.ryzyw.com': {
         api: 'https://pz.168188.dpdns.org/?url=https://cj.rycjapi.com/api.php/provide/vod',
         name: '🎬如意资源',
-        detail: 'https://www.ryzyw.com'
+        detail: 'https://www.ryzyw.com',
+        unavailable: true
     },
     'www.haohuazy.com': {
         api: 'https://pz.168188.dpdns.org/?url=https://hhzyapi.com/api.php/provide/vod',
         name: '🎬豪华资源',
-        detail: 'https://www.haohuazy.com'
+        detail: 'https://www.haohuazy.com',
+        unavailable: true
     },
     'bdzy1.com': {
         api: 'https://pz.168188.dpdns.org/?url=https://api.apibdzy.com/api.php/provide/vod',
         name: '🎬百度云zy',
-        detail: 'https://bdzy1.com'
+        detail: 'https://bdzy1.com',
+        unavailable: true
     },
     'lovedan.net': {
         api: 'https://pz.168188.dpdns.org/?url=https://lovedan.net/api.php/provide/vod',
         name: '🎬艾旦影视',
-        detail: 'https://lovedan.net'
+        detail: 'https://lovedan.net',
+        unavailable: true
     }
     //ARCHIVE https://telegra.ph/APIs-08-12
 };

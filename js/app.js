@@ -1,4 +1,6 @@
-const DEFAULT_SELECTED_APIS = ['dyttzyapi.com', 'bfzy.tv', 'cj.lzcaiji.com', 'www.moduzy.net']; // 默认选中资源
+// 默认选中的源，只挑选实测「搜索 + 详情 + 直链」三项均正常的源。
+// 注意：不要放 unavailable: true 的失效源，否则会出现「点开没资源」。
+const DEFAULT_SELECTED_APIS = ['dyttzyapi.com', 'bfzy.tv', 'ffzy', 'www.moduzy.net']; // 默认选中资源
 
 // 全局变量
 let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || JSON.stringify(DEFAULT_SELECTED_APIS));
@@ -44,6 +46,26 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.setItem('hasInitializedDefaults', 'true');
     }
 
+    // 迁移：把已失效的源从用户的选择里自动剔除。
+    // 老用户的 localStorage 里可能还勾着 DNS 已死/被拦截的源，
+    // 会导致搜索结果混入「点开没资源」的死卡片。
+    // 已失效源恢复可用后（配置里删掉 unavailable 标记），这里不会误伤。
+    if (typeof API_SITES !== 'undefined' && Array.isArray(selectedAPIs)) {
+        const aliveSelected = selectedAPIs.filter(key => {
+            const site = API_SITES[key];
+            // 自定义源（custom_ 开头）不在此校验范围
+            if (!site && key.startsWith('custom_')) return true;
+            return !(site && site.unavailable);
+        });
+        if (aliveSelected.length !== selectedAPIs.length) {
+            const removed = selectedAPIs.filter(k => !aliveSelected.includes(k));
+            console.warn('已自动移除失效的采集源:', removed.join(', '));
+            selectedAPIs = aliveSelected;
+            localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+            updateSelectedApiCount();
+        }
+    }
+
     // 设置黄色内容过滤器开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
     if (yellowFilterToggle) {
@@ -83,6 +105,8 @@ function initAPICheckboxes() {
         if (api.adult) return; // 跳过成人内容API，稍后添加
 
         const checked = selectedAPIs.includes(apiKey);
+        // 已失效的源（DNS 已死 / 被拦截）置灰提示，避免用户误选后「点开没资源」
+        const isDead = api.unavailable === true;
 
         const checkbox = document.createElement('div');
         checkbox.className = 'flex items-center';
@@ -91,7 +115,7 @@ function initAPICheckboxes() {
                    class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]" 
                    ${checked ? 'checked' : ''} 
                    data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-400 truncate">${api.name}</label>
+            <label for="api_${apiKey}" class="ml-1 text-xs ${isDead ? 'text-gray-600 line-through' : 'text-gray-400'} truncate" ${isDead ? 'title="该源当前已失效（站点不可达），建议取消勾选"' : ''}>${api.name}${isDead ? ' <span class="text-[10px] text-red-500/70 no-underline">已失效</span>' : ''}</label>
         `;
         normaldiv.appendChild(checkbox);
 
@@ -644,8 +668,11 @@ async function search() {
 
         // 从所有选中的API源搜索
         let allResults = [];
+        // 本次搜索选中的源数量会影响兜底策略：
+        // 源很多时若某个源还要逐页扫列表，会明显拖慢整体响应，
+        // 因此把「允许兜底」的信号传给各源（见 search.js）。
         const searchPromises = selectedAPIs.map(apiId => 
-            searchByAPIAndKeyWord(apiId, query)
+            searchByAPIAndKeyWord(apiId, query, false, { allowListFallback: selectedAPIs.length <= 2 })
         );
 
         // 等待所有搜索请求完成
@@ -971,10 +998,23 @@ async function showDetails(id, vod_name, sourceCode) {
                 </div>
             `;
         } else {
+            // 明确告知是哪条源没资源，并给出可操作的建议：
+            // 同一条片名在其它源往往能播，切换来源即可。
+            const srcName = (API_SITES[sourceCode] && API_SITES[sourceCode].name) || sourceCode || '当前来源';
+            const isDeadSource = !!(
+                (API_SITES[sourceCode] && API_SITES[sourceCode].unavailable) ||
+                (sourceCode === 'custom' && !API_SITES[sourceCode])
+            );
             modalContent.innerHTML = `
                 <div class="text-center py-8">
                     <div class="text-red-400 mb-2">❌ 未找到播放资源</div>
-                    <div class="text-gray-500 text-sm">该视频可能暂时无法播放，请尝试其他视频</div>
+                    <div class="text-gray-500 text-sm mb-3">
+                        来源「${srcName}」暂未提供该视频的可播放地址${isDeadSource ? '（该源当前已失效）' : ''}
+                    </div>
+                    <div class="text-gray-500 text-xs">
+                        建议：在搜索结果的卡片上点击「切换资源」，换用其它来源试试；
+                        也可在「设置」中取消勾选已失效的源后再搜索。
+                    </div>
                 </div>
             `;
         }
